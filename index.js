@@ -35,8 +35,8 @@ function verifyMetaSignature(req) {
     }
 }
 
-// GET: Validación inicial del Webhook por parte de Meta
-app.get('/webhook', (req, res) => {
+// GET: Validación inicial del Webhook por parte de Meta (Escucha raíz y /webhook)
+app.get(['/', '/webhook'], (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
@@ -53,8 +53,8 @@ app.get('/webhook', (req, res) => {
     return res.sendStatus(400);
 });
 
-// POST: Recepción de mensajes y eventos
-app.post('/webhook', async (req, res) => {
+// POST: Recepción de mensajes y eventos (Escucha raíz y /webhook)
+app.post(['/', '/webhook'], async (req, res) => {
     try {
         if (!verifyMetaSignature(req)) {
             console.warn('Firma de Meta inválida o META_APP_SECRET no configurado.');
@@ -96,7 +96,7 @@ app.post('/webhook', async (req, res) => {
                     text: { body: `Misiones Nacionales - Recibido: "${messageText}"` }
                 };
 
-                // Bloqueo síncrono: Vercel debe esperar a que Meta reciba la respuesta ANTES de cerrar la conexión
+                // Bloqueo síncrono: Vercel debe esperar a que Meta reciba la respuesta
                 try {
                     await enviarRespuestaTexto(whatsappPhoneNumberId, responsePayload);
                 } catch (fetchError) {
