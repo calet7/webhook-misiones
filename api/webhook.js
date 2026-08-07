@@ -37,27 +37,9 @@ function buildTriageMenu() {
             },
             action: {
                 buttons: [
-                    {
-                        type: 'reply',
-                        reply: {
-                            id: 'ATENCION_PASTOR',
-                            title: 'Atención personal de un pastor'
-                        }
-                    },
-                    {
-                        type: 'reply',
-                        reply: {
-                            id: 'DUDAS_CAPITULO',
-                            title: 'Dudas sobre el Capítulo'
-                        }
-                    },
-                    {
-                        type: 'reply',
-                        reply: {
-                            id: 'DIRECCIONES_HORARIOS',
-                            title: 'Direcciones y Horarios'
-                        }
-                    }
+                    { type: 'reply', reply: { id: 'ATENCION_PASTOR', title: 'Atención personal de un pastor' } },
+                    { type: 'reply', reply: { id: 'DUDAS_CAPITULO', title: 'Dudas sobre el Capítulo' } },
+                    { type: 'reply', reply: { id: 'DIRECCIONES_HORARIOS', title: 'Direcciones y Horarios' } }
                 ]
             }
         }
@@ -96,9 +78,7 @@ async function handleTriageAction(user, actionId, senderPhone, whatsappPhoneNumb
                 messaging_product: 'whatsapp',
                 to: senderPhone,
                 type: 'text',
-                text: {
-                    body: 'Hemos registrado tu solicitud de atención personal. Un pastor del distrito te contactará pronto.'
-                }
+                text: { body: 'Hemos registrado tu solicitud de atención personal. Un pastor del distrito te contactará pronto.' }
             });
             break;
         }
@@ -111,9 +91,7 @@ async function handleTriageAction(user, actionId, senderPhone, whatsappPhoneNumb
                 messaging_product: 'whatsapp',
                 to: senderPhone,
                 type: 'text',
-                text: {
-                    body: 'Tu duda ha sido registrada y será atendida por el equipo pastoral.'
-                }
+                text: { body: 'Tu duda ha sido registrada y será atendida por el equipo pastoral.' }
             });
             break;
         }
@@ -122,9 +100,7 @@ async function handleTriageAction(user, actionId, senderPhone, whatsappPhoneNumb
                 messaging_product: 'whatsapp',
                 to: senderPhone,
                 type: 'text',
-                text: {
-                    body: 'Direcciones y horarios: Visítanos en la iglesia local todos los domingos a las 10:00 AM.'
-                }
+                text: { body: 'Direcciones y horarios: Visítanos en la iglesia local todos los domingos a las 10:00 AM.' }
             });
             break;
         }
@@ -161,14 +137,12 @@ const handleGet = (req, res) => {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    if (mode && token) {
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            return res.status(200).send(challenge);
-        }
-        return res.sendStatus(403);
-    }
+    console.log('INTENTO DE VERIFICACION META:', { mode, token, expected: VERIFY_TOKEN, match: token === VERIFY_TOKEN });
 
-    return res.sendStatus(400);
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+        return res.status(200).send(challenge);
+    }
+    return res.sendStatus(403);
 };
 
 const handlePost = async (req, res) => {
@@ -206,9 +180,7 @@ const handlePost = async (req, res) => {
                 messaging_product: 'whatsapp',
                 to: senderPhone,
                 type: 'text',
-                text: {
-                    body: 'No se encontró tu registro en la campaña.'
-                }
+                text: { body: 'No se encontró tu registro en la campaña.' }
             });
             return res.status(200).send('EVENT_RECEIVED');
         }
@@ -227,7 +199,8 @@ const handlePost = async (req, res) => {
     }
 };
 
-app.get('/', handleGet);
-app.post('/', handlePost);
+// Escuchar tanto en la raiz como en /api/webhook para evitar problemas de mapeo en Vercel
+app.get(['/', '/api/webhook'], handleGet);
+app.post(['/', '/api/webhook'], handlePost);
 
 module.exports = app;
