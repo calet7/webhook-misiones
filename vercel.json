@@ -1,9 +1,9 @@
 ﻿{
+  "version": 2,
   "crons": [
     {
       "path": "/api/cron-serie",
       "schedule": "0 12 * * *"
     }
   ]
-} 
-   
+}
