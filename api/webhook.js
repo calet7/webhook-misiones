@@ -5,7 +5,6 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 });
 
 module.exports = async function handler(req, res) {
-    // 1. Verificación del Webhook de Meta (GET)
     if (req.method === 'GET') {
         const mode = req.query['hub.mode'];
         const token = req.query['hub.verify_token'];
@@ -17,7 +16,6 @@ module.exports = async function handler(req, res) {
         return res.status(403).send('Forbidden');
     }
 
-    // 2. Recepción de mensajes de WhatsApp (POST)
     if (req.method === 'POST') {
         try {
             const body = req.body;

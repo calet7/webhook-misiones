@@ -1,6 +1,4 @@
-const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
-const app = express();
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
@@ -10,7 +8,6 @@ const CRON_SECRET = process.env.CRON_SECRET;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 
-// Lista Oficial exacta (18 episodios)
 const CHAPTERS = [
     'Serie 3EP1 - Cuando el cansancio ya no se ve',
     'Serie 3EP2 - Cuando el cansancio se vuelve rutina',
@@ -37,15 +34,20 @@ function isToday(timestamp) {
     return new Date().toISOString().slice(0, 10) === new Date(timestamp).toISOString().slice(0, 10);
 }
 
-app.get('/', async (req, res) => {
-    if (req.query.secret !== CRON_SECRET) return res.sendStatus(403);
+module.exports = async function handler(req, res) {
+    if (req.method !== 'GET') {
+        return res.status(405).send('Method Not Allowed');
+    }
+
+    if (req.query.secret !== CRON_SECRET) {
+        return res.status(403).send('Forbidden');
+    }
 
     const { data: users } = await supabase.from('usuarios_campana').select('*').eq('estado', 'activo_serie');
 
     for (const user of users || []) {
         if (!user.telefono || isToday(user.ultimo_envio)) continue;
 
-        // Índice correcto: 0 a 17
         const idx = Math.min((Number(user.capitulo_actual) || 1) - 1, CHAPTERS.length - 1);
 
         await fetch(`https://graph.facebook.com/v26.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
@@ -58,7 +60,6 @@ app.get('/', async (req, res) => {
             .update({ ultimo_envio: new Date().toISOString(), capitulo_actual: (Number(user.capitulo_actual) || 1) + 1 })
             .eq('id', user.id);
     }
-    return res.status(200).send('Cron ejecutado');
-});
 
-module.exports = app;
+    return res.status(200).send('Cron ejecutado');
+};
