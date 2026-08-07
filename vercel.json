@@ -1,5 +1,9 @@
 {
   "version": 2,
+  "builds": [
+    { "src": "api/webhook.js", "use": "@vercel/node" },
+    { "src": "api/cron-serie.js", "use": "@vercel/node" }
+  ],
   "crons": [
     {
       "path": "/api/cron-serie",
