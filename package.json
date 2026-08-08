@@ -1,9 +1,9 @@
 {
   "name": "webhook-misiones",
   "version": "1.0.0",
-  "description": "",
   "private": true,
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.2"
+    "@supabase/supabase-js": "^2.112.2",
+    "express": "^4.19.2"
   }
 }
