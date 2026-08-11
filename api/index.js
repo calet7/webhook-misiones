@@ -122,7 +122,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
             }
         } 
         else {
-            // === LOG EXTREMO DE BD ===
             const { data: user } = await supabase.from('usuarios').select('*').eq('telefono', senderPhone).maybeSingle();
             
             console.log(`👤 Búsqueda BD Usuarios -> ${user ? 'ENCONTRADO' : 'NO ENCONTRADO'}`);
@@ -181,7 +180,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                 }
             }
             else {
-                // === EVALUACIÓN LÓGICA ESTRICTA ===
                 const esIniciarBtn = buttonPayload.includes('iniciar');
                 const esIniciarTxt = txtLower.includes('iniciar');
                 const esStatus1 = user.status_id === 1;
@@ -216,8 +214,8 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { type: 'text', text: user.nombre_completo }, 
-                                            { type: 'text', text: episodio1.nombre_episodio } 
+                                            { type: 'text', text: user.nombre_completo || 'Usuario' }, 
+                                            { type: 'text', text: episodio1.nombre_episodio || 'tu reflexión' } 
                                         ]
                                     }
                                 ]
