@@ -150,7 +150,12 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                 name: 'bienvenida_encuentra_sentido', 
                                 language: { code: 'es_CO' },
                                 components: [
-                                    { type: 'body', parameters: [{ type: 'text', text: nombreUsuario }] }
+                                    { 
+                                        type: 'body', 
+                                        parameters: [
+                                            { type: 'text', name: 'nombre', text: nombreUsuario }
+                                        ] 
+                                    }
                                 ]
                             }
                         });
@@ -174,11 +179,19 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                 name: 'envio_diario_encuentra_sentido',
                                 language: { code: 'es_CO' },
                                 components: [
-                                    { type: 'header', parameters: [{ type: 'image', image: { link: episodio1.url_imagen_versiculo } }] },
-                                    { type: 'body', parameters: [
-                                        { type: 'text', text: user.nombre_completo },
-                                        { type: 'text', text: episodio1.nombre_episodio } 
-                                    ]}
+                                    { 
+                                        type: 'header', 
+                                        parameters: [
+                                            { type: 'image', image: { link: episodio1.url_imagen_versiculo } }
+                                        ] 
+                                    },
+                                    { 
+                                        type: 'body', 
+                                        parameters: [
+                                            { type: 'text', name: 'nombre', text: user.nombre_completo },
+                                            { type: 'text', name: 'episodio', text: episodio1.nombre_episodio } 
+                                        ]
+                                    }
                                 ]
                             }
                         });
