@@ -153,7 +153,11 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { type: 'text', text: nombreUsuario }
+                                            { 
+                                                type: 'text', 
+                                                parameter_name: 'nombre', 
+                                                text: nombreUsuario || 'Amigo(a)'
+                                            }
                                         ] 
                                     }
                                 ]
@@ -188,8 +192,16 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { type: 'text',  text: user.nombre_completo },
-                                            { type: 'text',  text: episodio1.nombre_episodio } 
+                                            { 
+                                                type: 'text', 
+                                                parameter_name: 'nombre', 
+                                                text: user.nombre_completo || 'Amigo(a)'
+                                            }, 
+                                            { 
+                                                type: 'text', 
+                                                parameter_name: 'tema', 
+                                                text: episodio1.nombre_episodio || 'tu reflexión' 
+                                            } 
                                         ]
                                     }
                                 ]
@@ -285,7 +297,38 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                         });
 
                         payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Hemos registrado tu solicitud. Un pastor de tu departamento te contactará pronto.' } });
-                        payloadsToSend.push({ messaging_product: 'whatsapp', to: pastorAsignado.telefono, type: 'text', text: { body: `🚨 *NUEVO CASO ASIGNADO*\n\nUsuario: *${user.nombre_completo}*\n📱 ${senderPhone}\n🔗 wa.me/${senderPhone}\n\nPara gestionar este caso, escribe:\n*status ${senderPhone}*` } });
+                        
+                        payloadsToSend.push({
+                            messaging_product: 'whatsapp',
+                            to: pastorAsignado.telefono,
+                            type: 'template',
+                            template: {
+                                name: 'alerta_nuevo_caso',
+                                language: { code: 'es_CO' },
+                                components: [
+                                    {
+                                        type: 'body',
+                                        parameters: [
+                                            { 
+                                                type: 'text', 
+                                                parameter_name: 'nombre_pastor',
+                                                text: pastorAsignado.nombre || 'Pastor'
+                                            },
+                                            { 
+                                                type: 'text', 
+                                                parameter_name: 'nombre',
+                                                text: user.nombre_completo || 'Amigo(a)'
+                                            },
+                                            { 
+                                                type: 'text', 
+                                                parameter_name: 'enlace_whatsapp',
+                                                text: `wa.me/${senderPhone}` 
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        });
                     } else {
                         await supabase.from('usuarios').update({ status_id: 3 }).eq('telefono', senderPhone);
                         payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Hemos recibido tu solicitud. Nuestro equipo te contactará a la brevedad posible.' } });
