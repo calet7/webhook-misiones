@@ -61,16 +61,14 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
         const textBody = message.text?.body?.trim() || '';
         const txtLower = textBody.toLowerCase();
         
-        // LOG CRÍTICO PARA VER QUÉ ENVÍA META REALMENTE
         console.log('📦 RAW MESSAGE OBJECT:', JSON.stringify(message, null, 2));
 
-        // Extracción ampliada nativa para WhatsApp Cloud API
         let buttonPayload = message.button?.payload || message.button?.text || message.interactive?.button_reply?.id || message.interactive?.button_reply?.title || message.interactive?.list_reply?.id || message.interactive?.list_reply?.title || '';
         buttonPayload = String(buttonPayload).trim().toLowerCase();
 
         let payloadsToSend = [];
 
-        console.log(`🔎 Evaluando -> Text: "${txtLower}", ButtonPayload: "${buttonPayload}"`);
+        console.log(`🔎 Evaluando -> Text: "${textBody}", ButtonPayload: "${buttonPayload}"`);
 
         const { data: pastor } = await supabase.from('pastores').select('*').eq('telefono', senderPhone).maybeSingle();
 
@@ -124,21 +122,29 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
             }
         } 
         else {
+            // === LOG EXTREMO DE BD ===
             const { data: user } = await supabase.from('usuarios').select('*').eq('telefono', senderPhone).maybeSingle();
+            
+            console.log(`👤 Búsqueda BD Usuarios -> ${user ? 'ENCONTRADO' : 'NO ENCONTRADO'}`);
+            if (user) console.log(`📊 Datos BD: Status=${user.status_id}, Día=${user.dia_actual}, Nombre=${user.nombre_completo}`);
 
             if (!user) {
                 if (txtLower.includes('quiero iniciar la serie encuentra sentido')) {
-                    let nombreUsuario = 'Amigo(a)';
-                    let departamentoUsuario = 'No especificado';
+                    console.log('👤 Procesando registro de nuevo usuario...');
+                    let nombreUsuario = '';
+                    let departamentoUsuario = '';
 
-                    if (textBody.includes('mi nombre es ') && textBody.includes(' y soy del departamento de ')) {
-                        try {
-                            nombreUsuario = textBody.split(/mi nombre es /i)[1].split(/ y soy/i)[0].trim();
-                            departamentoUsuario = textBody.split(/departamento de /i)[1].replace('.', '').trim();
-                        } catch (e) {
-                            console.error('Error parseando las variables:', e);
-                        }
+                    const matchNombre = textBody.match(/mi nombre es\s+(.*?)\s+y soy/i);
+                    const matchDepto = textBody.match(/departamento de\s+(.*?)(?:\.|$)/i);
+
+                    if (matchNombre && matchNombre[1]) {
+                        nombreUsuario = matchNombre[1].trim();
                     }
+                    if (matchDepto && matchDepto[1]) {
+                        departamentoUsuario = matchDepto[1].trim();
+                    }
+
+                    console.log(`✅ Datos extraídos -> Nombre: ${nombreUsuario}, Depto: ${departamentoUsuario}`);
 
                     const { error: insertError } = await supabase.from('usuarios').insert({
                         telefono: senderPhone,
@@ -161,29 +167,38 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { 
-                                                type: 'text', 
-                                                parameter_name: 'nombre', 
-                                                text: nombreUsuario || 'Amigo(a)'
-                                            }
+                                            { type: 'text', text: nombreUsuario }
                                         ] 
                                     }
                                 ]
                             }
                         });
                     } else {
-                        console.error('Fallo al registrar usuario:', insertError);
+                        console.error('❌ Fallo al registrar usuario:', insertError);
                     }
+                } else {
+                    console.log(`⚠️ Registro ignorado: El texto no coincide con la frase obligatoria de registro.`);
                 }
             }
             else {
-                // Si el botón o el texto contiene "iniciar"
-                if ((buttonPayload.includes('iniciar') || txtLower.includes('iniciar')) && user.status_id === 1) {
+                // === EVALUACIÓN LÓGICA ESTRICTA ===
+                const esIniciarBtn = buttonPayload.includes('iniciar');
+                const esIniciarTxt = txtLower.includes('iniciar');
+                const esStatus1 = user.status_id === 1;
+                
+                console.log(`🚦 Evaluación Condición INICIAR -> BtnIniciar: ${esIniciarBtn}, TxtIniciar: ${esIniciarTxt}, StatusEs1: ${esStatus1}`);
+
+                if ((esIniciarBtn || esIniciarTxt) && esStatus1) {
+                    console.log('▶️ CONDICIÓN APROBADA. Avanzando a status 2 y buscando episodio...');
                     await supabase.from('usuarios').update({ status_id: 2, dia_actual: 1 }).eq('telefono', senderPhone);
                     
-                    const { data: episodio1 } = await supabase.from('mensajes_serie').select('*').eq('temporada', 1).eq('dia', 1).maybeSingle();
+                    const { data: episodio1, error: epError } = await supabase.from('mensajes_serie').select('*').eq('temporada', 1).eq('dia', 1).maybeSingle();
                     
+                    if (epError) console.error('❌ Error DB consultando episodios:', epError);
+
                     if (episodio1) {
+                        console.log(`✅ Episodio preparado: ${episodio1.nombre_episodio} | Imagen: ${episodio1.url_imagen_versiculo}`);
+
                         payloadsToSend.push({
                             messaging_product: 'whatsapp',
                             to: senderPhone,
@@ -201,21 +216,15 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { 
-                                                type: 'text', 
-                                                parameter_name: 'nombre', 
-                                                text: user.nombre_completo || 'Amigo(a)'
-                                            }, 
-                                            { 
-                                                type: 'text', 
-                                                parameter_name: 'tema', 
-                                                text: episodio1.nombre_episodio || 'tu reflexión' 
-                                            } 
+                                            { type: 'text', text: user.nombre_completo }, 
+                                            { type: 'text', text: episodio1.nombre_episodio } 
                                         ]
                                     }
                                 ]
                             }
                         });
+                    } else {
+                        console.log('⚠️ ALERTA: La base de datos devolvió NULL para el episodio T1 D1.');
                     }
                 }
                 else if (buttonPayload === 'escuchar') {
@@ -318,21 +327,9 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     {
                                         type: 'body',
                                         parameters: [
-                                            { 
-                                                type: 'text', 
-                                                parameter_name: 'nombre_pastor',
-                                                text: pastorAsignado.nombre || 'Pastor'
-                                            },
-                                            { 
-                                                type: 'text', 
-                                                parameter_name: 'nombre',
-                                                text: user.nombre_completo || 'Amigo(a)'
-                                            },
-                                            { 
-                                                type: 'text', 
-                                                parameter_name: 'enlace_whatsapp',
-                                                text: `wa.me/${senderPhone}` 
-                                            }
+                                            { type: 'text', text: pastorAsignado.nombre },
+                                            { type: 'text', text: user.nombre_completo },
+                                            { type: 'text', text: `wa.me/${senderPhone}` }
                                         ]
                                     }
                                 ]
@@ -378,6 +375,8 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                     await supabase.from('historial_bajas').insert({ telefono_usuario: senderPhone, accion_tomada: 'MARCADO_INACTIVO' });
                     await supabase.from('usuarios').update({ status_id: 8 }).eq('telefono', senderPhone); 
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Hemos pausado los envíos. No recibirás más mensajes de esta serie.' } });
+                } else {
+                    console.log(`⚠️ Ninguna acción programada para el payload: "${buttonPayload}"`);
                 }
             }
         }
@@ -392,11 +391,15 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                     if (!metaResponse.ok) {
                         const errText = await metaResponse.text();
                         console.error(`ERROR DE META:`, errText);
+                    } else {
+                        console.log('✅ Mensaje despachado con éxito a Meta.');
                     }
                 }).catch(networkError => {
                     console.error(`ERROR FATAL DE RED HACIA META:`, networkError.message);
                 })
             ));
+        } else {
+            console.log('ℹ️ No hay payloads preparados para enviar.');
         }
 
         res.sendStatus(200);
