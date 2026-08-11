@@ -148,7 +148,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                             type: 'template',
                             template: {
                                 name: 'bienvenida_encuentra_sentido', 
-                                language: { code: 'es' },
+                                language: { code: 'es_CO' },
                                 components: [
                                     { type: 'body', parameters: [{ type: 'text', text: nombreUsuario }] }
                                 ]
@@ -172,7 +172,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                             type: 'template',
                             template: {
                                 name: 'envio_diario_encuentra_sentido',
-                                language: { code: 'es' },
+                                language: { code: 'es_CO' },
                                 components: [
                                     { type: 'header', parameters: [{ type: 'image', image: { link: episodio1.url_imagen_versiculo } }] },
                                     { type: 'body', parameters: [
