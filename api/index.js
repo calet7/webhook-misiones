@@ -189,7 +189,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                         type: 'body', 
                                         parameters: [
                                             { type: 'text', name: 'nombre', text: user.nombre_completo },
-                                            { type: 'text', name: 'episodio', text: episodio1.nombre_episodio } 
+                                            { type: 'text', name: 'tema', text: episodio1.nombre_episodio } 
                                         ]
                                     }
                                 ]
