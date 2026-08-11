@@ -8,58 +8,119 @@ const CRON_SECRET = process.env.CRON_SECRET;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 
-const CHAPTERS = [
-    'Serie 3EP1 - Cuando el cansancio ya no se ve',
-    'Serie 3EP2 - Cuando el cansancio se vuelve rutina',
-    'Serie 3EP3 - Cuando el alma sirve, pero no descansa',
-    'Serie 3EP4 - Cuando el corazón no puede más',
-    'Serie 3EP5 - Cuando el peso por fin se suelta',
-    'Serie 3EP6 - Cuando el alma por fin descansa',
-    'EP1 - Cuando el silencio pesa más que el ruido',
-    'EP2 - Cuando la mente no se apaga',
-    'EP3 - Cuando el corazón no encuentra calma',
-    'EP4 - Cuando el futuro da miedo',
-    'EP5 - Cuando la frustración pesa más que la esperanza',
-    'EP6 - Cuando la entrega trae paz',
-    'ES1 - Cuando nada tiene sentido',
-    'ES2 - La soledad no es el final',
-    'ES3 - Ansiedad el ruido del alma',
-    'ES4 - Adoptados por amor',
-    'ES5 - Un nuevo comienzo',
-    'ES6 - Ahora sé quién soy'
-];
-
-function isToday(timestamp) {
-    if (!timestamp) return false;
-    return new Date().toISOString().slice(0, 10) === new Date(timestamp).toISOString().slice(0, 10);
-}
-
 module.exports = async function handler(req, res) {
-    if (req.method !== 'GET') {
-        return res.status(405).send('Method Not Allowed');
+    // 1. Validación de seguridad del Cron (Protege el endpoint de ejecuciones externas)
+    if (req.method !== 'GET') return res.status(405).send('Method Not Allowed');
+    if (req.query.secret !== CRON_SECRET) return res.status(403).send('Forbidden');
+
+    try {
+        // 2. Extraer usuarios ACTIVOS (status_id = 2) que NO han completado su temporada (dia_actual < 6)
+        // Eliminamos el obsoleto "isToday" que generaba falsos positivos.
+        const { data: usersActivos, error: dbError } = await supabase
+            .from('usuarios')
+            .select('*')
+            .eq('status_id', 2)
+            .lt('dia_actual', 6);
+
+        if (dbError) {
+            console.error('Error consultando usuarios en BD:', dbError);
+            return res.status(500).send('Error interno BD');
+        }
+
+        if (!usersActivos || usersActivos.length === 0) {
+            return res.status(200).send('Cron ejecutado: Sin usuarios pendientes para hoy.');
+        }
+
+        // 3. Descargar el catálogo completo de mensajes (Minimiza llamadas a la BD en el bucle)
+        const { data: mensajesCat, error: errMensajes } = await supabase
+            .from('mensajes_serie')
+            .select('*');
+
+        if (errMensajes) {
+            console.error('Error cargando catálogo de mensajes:', errMensajes);
+            return res.status(500).send('Error de catálogo BD');
+        }
+
+        // Crear mapa para búsqueda instantánea
+        const mapaMensajes = {};
+        for (const m of mensajesCat) {
+            mapaMensajes[`${m.temporada}_${m.dia}`] = m;
+        }
+
+        let enviosExitosos = 0;
+
+        // 4. Procesar la cola de envíos
+        for (const user of usersActivos) {
+            if (!user.telefono) continue;
+
+            const temporadaActual = user.temporada_actual || 1;
+            const diaAEnviar = (Number(user.dia_actual) || 0) + 1;
+
+            const dataEpisodio = mapaMensajes[`${temporadaActual}_${diaAEnviar}`];
+            if (!dataEpisodio) {
+                console.error(`Falta contenido para T${temporadaActual} D${diaAEnviar} (User: ${user.telefono})`);
+                continue; 
+            }
+
+            // --- PAYLOAD ALINEADO A LA PLANTILLA APROBADA ---
+            // Plantilla: envio_diario_encuentra_sentido
+            // Variables: {{1}} = nombre, {{2}} = tema
+            const payloadPlantilla = {
+                messaging_product: 'whatsapp',
+                to: user.telefono,
+                type: 'template',
+                template: {
+                    name: 'envio_diario_encuentra_sentido',
+                    language: { code: 'es' },
+                    components: [
+                        { 
+                            type: 'header', 
+                            parameters: [
+                                { type: 'image', image: { link: dataEpisodio.url_imagen_versiculo } }
+                            ] 
+                        },
+                        { 
+                            type: 'body', 
+                            parameters: [
+                                { type: 'text', text: user.nombre_completo },   // {{nombre}}
+                                { type: 'text', text: dataEpisodio.nombre_episodio } // {{tema}}
+                            ]
+                        }
+                    ]
+                }
+            };
+
+            // Ejecutar envío a la API de Graph
+            const metaResponse = await fetch(`https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+                method: 'POST',
+                headers: { 
+                    Authorization: `Bearer ${WHATSAPP_TOKEN}`, 
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify(payloadPlantilla)
+            });
+
+            if (!metaResponse.ok) {
+                const errText = await metaResponse.text();
+                console.error(`ERROR META (Día ${diaAEnviar} | Tel: ${user.telefono}):`, errText);
+                continue; // Si Meta falla, no avanzamos el día para que se reintente mañana
+            }
+
+            // 5. Transición de Día
+            // Actualizamos el registro del usuario sumándole el día completado
+            await supabase.from('usuarios')
+                .update({ 
+                    dia_actual: diaAEnviar
+                })
+                .eq('id', user.id);
+
+            enviosExitosos++;
+        }
+
+        return res.status(200).send(`Cron ejecutado. Mensajes enviados con éxito: ${enviosExitosos}/${usersActivos.length}`);
+
+    } catch (err) {
+        console.error('Error crítico en ejecución del Cron:', err);
+        return res.status(500).send('Falla en la ejecución del servidor');
     }
-
-    if (req.query.secret !== CRON_SECRET) {
-        return res.status(403).send('Forbidden');
-    }
-
-    const { data: users } = await supabase.from('usuarios_campana').select('*').eq('estado', 'activo_serie');
-
-    for (const user of users || []) {
-        if (!user.telefono || isToday(user.ultimo_envio)) continue;
-
-        const idx = Math.min((Number(user.capitulo_actual) || 1) - 1, CHAPTERS.length - 1);
-
-        await fetch(`https://graph.facebook.com/v26.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messaging_product: 'whatsapp', to: user.telefono, type: 'text', text: { body: CHAPTERS[idx] } })
-        });
-
-        await supabase.from('usuarios_campana')
-            .update({ ultimo_envio: new Date().toISOString(), capitulo_actual: (Number(user.capitulo_actual) || 1) + 1 })
-            .eq('id', user.id);
-    }
-
-    return res.status(200).send('Cron ejecutado');
 };
