@@ -130,8 +130,10 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
             if (!user) {
                 if (txtLower.includes('quiero iniciar la serie encuentra sentido')) {
                     console.log('👤 Procesando registro de nuevo usuario...');
-                    let nombreUsuario = 'Amigo(a)';
-                    let departamentoUsuario = 'No especificado';
+                    
+                    // Variables inicializadas en vacío, confiando totalmente en la extracción
+                    let nombreUsuario = '';
+                    let departamentoUsuario = '';
 
                     const matchNombre = textBody.match(/mi nombre es\s+(.*?)\s+y soy/i);
                     const matchDepto = textBody.match(/departamento de\s+(.*?)(?:\.|$)/i);
@@ -166,11 +168,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { 
-                                                type: 'text',
-                                                name: 'nombre', 
-                                                text: nombreUsuario 
-                                            }
+                                            { type: 'text', text: nombreUsuario }
                                         ] 
                                     }
                                 ]
@@ -218,16 +216,8 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { 
-                                                type: 'text',
-                                                name: 'nombre', 
-                                                text: user.nombre_completo || 'Amigo(a)' 
-                                            }, 
-                                            { 
-                                                type: 'text',
-                                                name: 'tema', 
-                                                text: episodio1.nombre_episodio || 'tu reflexión' 
-                                            } 
+                                            { type: 'text', text: user.nombre_completo }, // Fallback eliminado
+                                            { type: 'text', text: episodio1.nombre_episodio } 
                                         ]
                                     }
                                 ]
@@ -337,9 +327,9 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     {
                                         type: 'body',
                                         parameters: [
-                                            { type: 'text', name: 'nombre_pastor', text: pastorAsignado.nombre },
-                                            { type: 'text', name: 'nombre', text: user.nombre_completo },
-                                            { type: 'text', name: 'enlace_whatsapp', text: `wa.me/${senderPhone}` }
+                                            { type: 'text', text: pastorAsignado.nombre },
+                                            { type: 'text', text: user.nombre_completo },
+                                            { type: 'text', text: `wa.me/${senderPhone}` }
                                         ]
                                     }
                                 ]
