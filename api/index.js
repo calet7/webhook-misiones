@@ -61,8 +61,16 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
         const textBody = message.text?.body?.trim() || '';
         const txtLower = textBody.toLowerCase();
         
-        let buttonPayload = message.button?.payload || message.interactive?.button_reply?.id || message.interactive?.list_reply?.id || '';
+        // LOG CRÍTICO PARA VER QUÉ ENVÍA META REALMENTE
+        console.log('📦 RAW MESSAGE OBJECT:', JSON.stringify(message, null, 2));
+
+        // Extracción ampliada nativa para WhatsApp Cloud API
+        let buttonPayload = message.button?.payload || message.button?.text || message.interactive?.button_reply?.id || message.interactive?.button_reply?.title || message.interactive?.list_reply?.id || message.interactive?.list_reply?.title || '';
+        buttonPayload = String(buttonPayload).trim().toLowerCase();
+
         let payloadsToSend = [];
+
+        console.log(`🔎 Evaluando -> Text: "${txtLower}", ButtonPayload: "${buttonPayload}"`);
 
         const { data: pastor } = await supabase.from('pastores').select('*').eq('telefono', senderPhone).maybeSingle();
 
@@ -97,7 +105,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: `⚠️ Formato incorrecto. Escribe: *status numerocelular*` } });
                 }
             } 
-            else if (buttonPayload.startsWith('STATUS_')) {
+            else if (buttonPayload.startsWith('status_')) {
                 const parts = buttonPayload.split('_');
                 const nuevoStatusId = parseInt(parts[1]); 
                 const targetPhone = parts[2];
@@ -123,10 +131,10 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                     let nombreUsuario = 'Amigo(a)';
                     let departamentoUsuario = 'No especificado';
 
-                    if (textBody.includes('Mi nombre es ') && textBody.includes(' y soy del departamento de ')) {
+                    if (textBody.includes('mi nombre es ') && textBody.includes(' y soy del departamento de ')) {
                         try {
-                            nombreUsuario = textBody.split('Mi nombre es ')[1].split(' y soy')[0].trim();
-                            departamentoUsuario = textBody.split('departamento de ')[1].replace('.', '').trim();
+                            nombreUsuario = textBody.split(/mi nombre es /i)[1].split(/ y soy/i)[0].trim();
+                            departamentoUsuario = textBody.split(/departamento de /i)[1].replace('.', '').trim();
                         } catch (e) {
                             console.error('Error parseando las variables:', e);
                         }
@@ -169,7 +177,8 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                 }
             }
             else {
-                if (buttonPayload === 'INICIAR' && user.status_id === 1) {
+                // Si el botón o el texto contiene "iniciar"
+                if ((buttonPayload.includes('iniciar') || txtLower.includes('iniciar')) && user.status_id === 1) {
                     await supabase.from('usuarios').update({ status_id: 2, dia_actual: 1 }).eq('telefono', senderPhone);
                     
                     const { data: episodio1 } = await supabase.from('mensajes_serie').select('*').eq('temporada', 1).eq('dia', 1).maybeSingle();
@@ -209,7 +218,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                         });
                     }
                 }
-                else if (buttonPayload === 'ESCUCHAR') {
+                else if (buttonPayload === 'escuchar') {
                     const dia = user.dia_actual === 0 ? 1 : user.dia_actual;
                     const temp = user.temporada_actual || 1;
 
@@ -234,15 +243,15 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                             if (temp < 3) {
                                 textoMenu = 'Has finalizado esta temporada. ¿Qué deseas hacer para continuar tu proceso?';
                                 botonesAccion = [
-                                    { type: 'reply', reply: { id: 'SIGUIENTE_TEMPORADA', title: 'Siguiente Temporada' } },
-                                    { type: 'reply', reply: { id: 'SPOTIFY', title: 'Escuchar Spotify' } },
-                                    { type: 'reply', reply: { id: 'CANAL', title: 'Cápsula de Vida' } }
+                                    { type: 'reply', reply: { id: 'siguiente_temporada', title: 'Siguiente Temporada' } },
+                                    { type: 'reply', reply: { id: 'spotify', title: 'Escuchar Spotify' } },
+                                    { type: 'reply', reply: { id: 'canal', title: 'Cápsula de Vida' } }
                                 ];
                             } else {
                                 textoMenu = 'Has completado todas las temporadas. El camino no termina aquí, ¿qué deseas hacer?';
                                 botonesAccion = [
-                                    { type: 'reply', reply: { id: 'SPOTIFY', title: 'Escuchar Spotify' } },
-                                    { type: 'reply', reply: { id: 'CANAL', title: 'Cápsula de Vida' } }
+                                    { type: 'reply', reply: { id: 'spotify', title: 'Escuchar Spotify' } },
+                                    { type: 'reply', reply: { id: 'canal', title: 'Cápsula de Vida' } }
                                 ];
                             }
 
@@ -259,7 +268,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                         }
                     }
                 }
-                else if (buttonPayload === 'SIGUIENTE_TEMPORADA') {
+                else if (buttonPayload === 'siguiente_temporada') {
                     await supabase.from('usuarios').update({ 
                         temporada_actual: user.temporada_actual + 1, 
                         dia_actual: 0,
@@ -268,15 +277,15 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                     
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: '¡Excelente decisión! Mañana a las 9:00 a.m. recibirás el primer episodio de tu nueva temporada.' } });
                 }
-                else if (buttonPayload === 'SPOTIFY') {
+                else if (buttonPayload === 'spotify') {
                     await supabase.from('usuarios').update({ suscrito_spotify: true, status_id: 6 }).eq('telefono', senderPhone); 
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Aquí tienes nuestro Spotify para que escuches todas las reflexiones: [LINK_SPOTIFY]' } });
                 }
-                else if (buttonPayload === 'CANAL') {
+                else if (buttonPayload === 'canal') {
                     await supabase.from('usuarios').update({ status_id: 6 }).eq('telefono', senderPhone);
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Únete a nuestro canal oficial haciendo clic aquí: www.ipucmisionesnacionales.org/canal' } });
                 }
-                else if (buttonPayload === 'ACOMPANAMIENTO') {
+                else if (buttonPayload === 'acompanamiento' || buttonPayload === 'acompañamiento') {
                     const { data: pastores } = await supabase
                         .from('pastores')
                         .select('*')
@@ -353,19 +362,19 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                             body: { text: '¿Qué deseas hacer respecto a tus datos y suscripción?' },
                             action: {
                                 buttons: [
-                                    { type: 'reply', reply: { id: 'HABEAS_BORRAR', title: 'Borrar Datos' } },
-                                    { type: 'reply', reply: { id: 'HABEAS_INACTIVO', title: 'Dejar de Recibir' } }
+                                    { type: 'reply', reply: { id: 'habeas_borrar', title: 'Borrar Datos' } },
+                                    { type: 'reply', reply: { id: 'habeas_inactivo', title: 'Dejar de Recibir' } }
                                 ]
                             }
                         }
                     });
                 }
-                else if (buttonPayload === 'HABEAS_BORRAR') {
+                else if (buttonPayload === 'habeas_borrar') {
                     await supabase.from('historial_bajas').insert({ telefono_usuario: senderPhone, accion_tomada: 'BORRADO_TOTAL' });
                     await supabase.from('usuarios').delete().eq('telefono', senderPhone);
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Tus datos han sido eliminados por completo de nuestras bases de datos.' } });
                 }
-                else if (buttonPayload === 'HABEAS_INACTIVO') {
+                else if (buttonPayload === 'habeas_inactivo') {
                     await supabase.from('historial_bajas').insert({ telefono_usuario: senderPhone, accion_tomada: 'MARCADO_INACTIVO' });
                     await supabase.from('usuarios').update({ status_id: 8 }).eq('telefono', senderPhone); 
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Hemos pausado los envíos. No recibirás más mensajes de esta serie.' } });
