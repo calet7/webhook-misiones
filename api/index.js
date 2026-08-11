@@ -123,15 +123,10 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
         } 
         else {
             const { data: user } = await supabase.from('usuarios').select('*').eq('telefono', senderPhone).maybeSingle();
-            
-            console.log(`👤 Búsqueda BD Usuarios -> ${user ? 'ENCONTRADO' : 'NO ENCONTRADO'}`);
-            if (user) console.log(`📊 Datos BD: Status=${user.status_id}, Día=${user.dia_actual}, Nombre=${user.nombre_completo}`);
 
             if (!user) {
                 if (txtLower.includes('quiero iniciar la serie encuentra sentido')) {
                     console.log('👤 Procesando registro de nuevo usuario...');
-                    
-                    // Variables inicializadas en vacío, confiando totalmente en la extracción
                     let nombreUsuario = '';
                     let departamentoUsuario = '';
 
@@ -175,29 +170,22 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                             }
                         });
                     } else {
-                        console.error('❌ Fallo al registrar usuario:', insertError);
+                        console.error('Fallo al registrar usuario:', insertError);
                     }
-                } else {
-                    console.log(`⚠️ Registro ignorado: El texto no coincide con la frase obligatoria de registro.`);
                 }
             }
             else {
-                const esIniciarBtn = buttonPayload.includes('iniciar');
-                const esIniciarTxt = txtLower.includes('iniciar');
-                const esStatus1 = user.status_id === 1;
-                
-                console.log(`🚦 Evaluación Condición INICIAR -> BtnIniciar: ${esIniciarBtn}, TxtIniciar: ${esIniciarTxt}, StatusEs1: ${esStatus1}`);
-
-                if ((esIniciarBtn || esIniciarTxt) && esStatus1) {
-                    console.log('▶️ CONDICIÓN APROBADA. Avanzando a status 2 y buscando episodio...');
+                if ((buttonPayload.includes('iniciar') || txtLower.includes('iniciar')) && user.status_id === 1) {
+                    console.log('▶️ Comando INICIAR detectado. Avanzando a status 2...');
                     await supabase.from('usuarios').update({ status_id: 2, dia_actual: 1 }).eq('telefono', senderPhone);
                     
+                    console.log('🔍 Buscando episodio T1 D1...');
                     const { data: episodio1, error: epError } = await supabase.from('mensajes_serie').select('*').eq('temporada', 1).eq('dia', 1).maybeSingle();
                     
-                    if (epError) console.error('❌ Error DB consultando episodios:', epError);
+                    if (epError) console.error('❌ Error DB episodios:', epError);
 
                     if (episodio1) {
-                        console.log(`✅ Episodio preparado: ${episodio1.nombre_episodio} | Imagen: ${episodio1.url_imagen_versiculo}`);
+                        console.log(`✅ Episodio encontrado: ${episodio1.nombre_episodio}`);
 
                         payloadsToSend.push({
                             messaging_product: 'whatsapp',
@@ -216,7 +204,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                                     { 
                                         type: 'body', 
                                         parameters: [
-                                            { type: 'text', text: user.nombre_completo }, // Fallback eliminado
+                                            { type: 'text', text: user.nombre_completo }, 
                                             { type: 'text', text: episodio1.nombre_episodio } 
                                         ]
                                     }
@@ -375,8 +363,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
                     await supabase.from('historial_bajas').insert({ telefono_usuario: senderPhone, accion_tomada: 'MARCADO_INACTIVO' });
                     await supabase.from('usuarios').update({ status_id: 8 }).eq('telefono', senderPhone); 
                     payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Hemos pausado los envíos. No recibirás más mensajes de esta serie.' } });
-                } else {
-                    console.log(`⚠️ Ninguna acción programada para el payload: "${buttonPayload}"`);
                 }
             }
         }
