@@ -107,6 +107,40 @@ function buildTemplatePayload(to, templateName, values) {
 }
 
 /**
+ * Sanitizador: elimina claves no permitidas (ej. name) y normaliza parámetros
+ */
+function sanitizeTemplateForMeta(payload) {
+  try {
+    if (!payload || !payload.template || !Array.isArray(payload.template.components)) return payload;
+    const copy = JSON.parse(JSON.stringify(payload)); // deep clone
+    for (const comp of copy.template.components) {
+      if (!Array.isArray(comp.parameters)) continue;
+      comp.parameters = comp.parameters.map(param => {
+        if (param == null) return param;
+        // image
+        if (param.type === 'image' && param.image && param.image.link) {
+          return { type: 'image', image: { link: String(param.image.link) } };
+        }
+        // text
+        if (param.type === 'text' && (param.text !== undefined && param.text !== null)) {
+          return { type: 'text', text: String(param.text) };
+        }
+        // fallback: keep only allowed keys
+        const out = {};
+        if (param.type) out.type = param.type;
+        if (param.text) out.text = String(param.text);
+        if (param.image && param.image.link) out.image = { link: String(param.image.link) };
+        return out;
+      });
+    }
+    return copy;
+  } catch (e) {
+    console.error('sanitizeTemplateForMeta error:', e?.message || e);
+    return payload;
+  }
+}
+
+/**
  * recordRejectedPayload
  */
 async function recordRejectedPayload(supabaseClient, payloadRecord) {
@@ -125,16 +159,54 @@ async function recordRejectedPayload(supabaseClient, payloadRecord) {
 }
 
 /**
- * safeBuildTemplatePush
+ * safeBuildTemplatePush (intenta named; si falla, intenta convertir a posicional)
  */
 async function safeBuildTemplatePush(targetArray, to, templateName, values, context = {}, opts = { fallbackText: true }) {
+  // Helper: construir payload posicional a partir de values nombrados y TEMPLATE_MAP
+  function buildPositionalFromNamed(templateName, namedValues) {
+    const meta = TEMPLATE_MAP[templateName];
+    if (!meta) throw new Error(`Template ${templateName} no registrado en TEMPLATE_MAP`);
+    const arr = [];
+    for (const comp of meta.components) {
+      for (const ph of comp.placeholders) {
+        const v = namedValues[ph];
+        if (v === undefined || v === null || String(v).trim() === '') {
+          throw new Error(`Falta valor para placeholder "${ph}" al convertir a posicional`);
+        }
+        arr.push(v);
+      }
+    }
+    return arr;
+  }
+
   try {
+    // Intento 1: construir con la lógica normal (named o posicional según TEMPLATE_MAP)
     const tpl = buildTemplatePayload(to, templateName, values);
     targetArray.push(tpl);
+    console.log(`safeBuildTemplatePush: payload construido con modo declarado para plantilla ${templateName}`);
     return true;
   } catch (err) {
     console.error(`Error buildTemplatePayload ${templateName}:`, err.message, 'context:', context);
 
+    // Intentar fallback posicional si corresponde
+    try {
+      const meta = TEMPLATE_MAP[templateName];
+      const isNamedMode = meta && meta.mode === 'named';
+      const valuesIsObject = values && !Array.isArray(values) && typeof values === 'object';
+
+      if (isNamedMode && valuesIsObject) {
+        const positional = buildPositionalFromNamed(templateName, values);
+        const tplPos = buildTemplatePayload(to, templateName, positional);
+        targetArray.push(tplPos);
+        console.log(`safeBuildTemplatePush: fallback posicional aplicado para plantilla ${templateName}`);
+        return true;
+      }
+    } catch (fallbackErr) {
+      console.error(`Fallback posicional falló para ${templateName}:`, fallbackErr.message);
+      // continuar al registro del payload rechazado
+    }
+
+    // Guardar para análisis sin bloquear el webhook
     const record = {
       template_name: templateName,
       values: values || null,
@@ -145,6 +217,7 @@ async function safeBuildTemplatePush(targetArray, to, templateName, values, cont
 
     await recordRejectedPayload(supabase, record);
 
+    // Fallback: enviar un texto simple para confirmar recepción y evitar reintentos de Meta
     if (opts.fallbackText) {
       try {
         const fallback = {
@@ -493,16 +566,18 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
     if (payloadsToSend.length > 0) {
       await Promise.all(payloadsToSend.map(async (payload) => {
         try {
-          console.log('Payload a enviar:', JSON.stringify(payload, null, 2));
-        } catch (e) {
-          console.error('Error al serializar payload:', e.message);
-        }
+          // Sanitizar y loguear el payload final que se enviará a Meta
+          const safePayload = payload.template ? sanitizeTemplateForMeta(payload) : payload;
+          try {
+            console.log('Payload final enviado a Meta:', JSON.stringify(safePayload, null, 2));
+          } catch (e) {
+            console.error('Error al serializar payload final:', e.message);
+          }
 
-        try {
           const metaResponse = await fetch(graphUrl, {
             method: 'POST',
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(safePayload)
           });
 
           if (!metaResponse.ok) {
