@@ -1,4 +1,11 @@
 {
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/*.js",
+      "use": "@vercel/node"
+    }
+  ],
   "rewrites": [
     {
       "source": "/webhook",
@@ -9,21 +16,14 @@
     "api/cron-serie.js": {
       "maxDuration": 60
     },
-    "api/cron-report.js": {
-      "maxDuration": 60
-    },
     "api/index.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron-serie",
       "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron-report",
-      "schedule": "0 22 * * *"
     }
   ]
 }
