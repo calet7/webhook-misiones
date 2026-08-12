@@ -16,6 +16,9 @@
     "api/cron-serie.js": {
       "maxDuration": 60
     },
+    "api/cron-report.js": {
+      "maxDuration": 60
+    },
     "api/index.js": {
       "maxDuration": 60
     }
@@ -24,6 +27,10 @@
     {
       "path": "/api/cron-serie",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron-report",
+      "schedule": "0 22 * * *"
     }
   ]
 }
