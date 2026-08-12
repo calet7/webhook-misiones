@@ -1,7 +1,8 @@
 ﻿const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
-const fetch = require('node-fetch');
+// Usar fetch global de Node 18+ (Vercel ya lo expone)
+const fetch = globalThis.fetch;
 
 const app = express();
 
