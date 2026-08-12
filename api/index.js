@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const fetch = require('node-fetch');
 
 const app = express();
 
@@ -15,29 +16,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 });
 
 /**
- * Nota de migración (ejecutar en Supabase SQL Editor una vez):
- *
- * CREATE TABLE IF NOT EXISTS public.payloads_rechazados (
- *   id              bigserial PRIMARY KEY,
- *   template_name   text,
- *   values          jsonb,
- *   error_message   text,
- *   context         jsonb,
- *   attempts        integer DEFAULT 0,
- *   processed       boolean DEFAULT false,
- *   created_at      timestamptz DEFAULT now()
- * );
- *
- * CREATE INDEX IF NOT EXISTS idx_payloads_rechazados_created_at ON public.payloads_rechazados (created_at);
- * CREATE INDEX IF NOT EXISTS idx_payloads_rechazados_processed ON public.payloads_rechazados (processed);
- * CREATE INDEX IF NOT EXISTS idx_payloads_rechazados_template ON public.payloads_rechazados (template_name);
- *
- * Para retención/limpieza automática, programa un job (cron / pg_cron / función externa) que ejecute:
- * DELETE FROM public.payloads_rechazados WHERE processed = true AND created_at < now() - interval '90 days';
- */
-
-/**
- * TEMPLATE_MAP y buildTemplatePayload
+ * TEMPLATE_MAP y buildTemplatePayload (corregido: no enviar "name" en parameters)
  */
 const TEMPLATE_MAP = {
   bienvenida_encuentra_sentido: {
@@ -103,11 +82,11 @@ function buildTemplatePayload(to, templateName, values) {
         if (!/^https?:\/\//i.test(String(val))) {
           throw new Error(`El placeholder "${ph}" para header imagen debe ser una URL válida`);
         }
-        // Retorno posicional estricto sin la llave 'name'
+        // Meta espera { type: 'image', image: { link: '...' } }
         return { type: 'image', image: { link: String(val) } };
       }
 
-      // Retorno posicional estricto sin la llave 'name'
+      // default: text parameter (sin "name")
       return { type: 'text', text: String(val) };
     });
 
@@ -128,8 +107,6 @@ function buildTemplatePayload(to, templateName, values) {
 
 /**
  * recordRejectedPayload
- * - Inserta en payloads_rechazados con manejo de fallos.
- * - Si la inserción falla, hace un backup en logs (o Sentry en producción).
  */
 async function recordRejectedPayload(supabaseClient, payloadRecord) {
   try {
@@ -137,8 +114,6 @@ async function recordRejectedPayload(supabaseClient, payloadRecord) {
     return true;
   } catch (dbErr) {
     console.error('No se pudo guardar payload rechazado en DB:', dbErr?.message || dbErr);
-
-    // Respaldo local: escribir a log rotativo o enviar a Sentry/Slack
     try {
       console.error('BACKUP PAYLOAD:', JSON.stringify(payloadRecord));
     } catch (logErr) {
@@ -150,10 +125,6 @@ async function recordRejectedPayload(supabaseClient, payloadRecord) {
 
 /**
  * safeBuildTemplatePush
- * - Envuelve buildTemplatePayload en try/catch para evitar que un throw rompa el webhook.
- * - Inserta registro en payloads_rechazados con contexto para análisis.
- * - Devuelve true si el payload fue construido y empujado, false si falló.
- * - Si falla, agrega un fallback de texto para mantener UX (configurable).
  */
 async function safeBuildTemplatePush(targetArray, to, templateName, values, context = {}, opts = { fallbackText: true }) {
   try {
@@ -163,7 +134,6 @@ async function safeBuildTemplatePush(targetArray, to, templateName, values, cont
   } catch (err) {
     console.error(`Error buildTemplatePayload ${templateName}:`, err.message, 'context:', context);
 
-    // Guardar para análisis sin bloquear el webhook
     const record = {
       template_name: templateName,
       values: values || null,
@@ -174,7 +144,6 @@ async function safeBuildTemplatePush(targetArray, to, templateName, values, cont
 
     await recordRejectedPayload(supabase, record);
 
-    // Fallback: enviar un texto simple para confirmar recepción y evitar reintentos de Meta
     if (opts.fallbackText) {
       try {
         const fallback = {
@@ -189,7 +158,6 @@ async function safeBuildTemplatePush(targetArray, to, templateName, values, cont
       }
     }
 
-    // Opcional: aquí podrías disparar una alerta a Slack/Sentry
     return false;
   }
 }
@@ -237,7 +205,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
     const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || body.entry[0].changes[0].value.metadata?.phone_number_id;
     const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 
-    // Graph URL actualizado a la versión que estaban usando (v26.0)
     const graphUrl = `https://graph.facebook.com/v26.0/${whatsappPhoneNumberId}/messages`;
 
     // Idempotencia: registrar wamid procesado
@@ -339,7 +306,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
           });
 
           if (!insertError) {
-            // Usar safe builder para plantilla nombrada
             await safeBuildTemplatePush(
               payloadsToSend,
               senderPhone,
@@ -365,7 +331,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
           if (episodio1) {
             console.log(`✅ Episodio encontrado: ${episodio1.nombre_episodio}`);
 
-            // Construir plantilla envio_diario_encuentra_sentido con named placeholders (safe)
             await safeBuildTemplatePush(
               payloadsToSend,
               senderPhone,
@@ -466,7 +431,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
 
             payloadsToSend.push({ messaging_product: 'whatsapp', to: senderPhone, type: 'text', text: { body: 'Hemos registrado tu solicitud. Un pastor de tu departamento te contactará pronto.' } });
 
-            // Usar safe builder para alerta_nuevo_caso (named placeholders)
             await safeBuildTemplatePush(
               payloadsToSend,
               pastorAsignado.telefono,
@@ -544,7 +508,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
             const errText = await metaResponse.text();
             console.error(`ERROR DE META:`, errText);
 
-            // Guardar payload rechazado para análisis (resiliente)
             const record = {
               template_name: payload.template?.name || null,
               values: payload.template ? payload.template.components : null,
@@ -559,7 +522,6 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
         } catch (networkError) {
           console.error(`ERROR FATAL DE RED HACIA META:`, networkError.message);
 
-          // Guardar intento fallido por red para análisis
           const record = {
             template_name: payload.template?.name || null,
             values: payload.template ? payload.template.components : null,
@@ -574,11 +536,10 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
       console.log('ℹ️ No hay payloads preparados para enviar.');
     }
 
-    // Responder 200 siempre que el procesamiento local haya terminado (evita reintentos de Meta por errores de construcción)
+    // Responder 200 siempre que el procesamiento local haya terminado
     res.sendStatus(200);
   } catch (err) {
     console.error('Error crítico en webhook:', err);
-    // En caso de error crítico que impida confirmar recepción, devolver 500 para que Meta reintente.
     res.sendStatus(500);
   }
 });
