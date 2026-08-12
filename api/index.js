@@ -103,15 +103,12 @@ function buildTemplatePayload(to, templateName, values) {
         if (!/^https?:\/\//i.test(String(val))) {
           throw new Error(`El placeholder "${ph}" para header imagen debe ser una URL válida`);
         }
-        return meta.mode === 'named'
-          ? { type: 'image', name: ph, image: { link: String(val) } }
-          : { type: 'image', image: { link: String(val) } };
+        // Retorno posicional estricto sin la llave 'name'
+        return { type: 'image', image: { link: String(val) } };
       }
 
-      // default: text parameter
-      return meta.mode === 'named'
-        ? { type: 'text', name: ph, text: String(val) }
-        : { type: 'text', text: String(val) };
+      // Retorno posicional estricto sin la llave 'name'
+      return { type: 'text', text: String(val) };
     });
 
     return { type: comp.type, parameters: params };
