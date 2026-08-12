@@ -53,7 +53,9 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
         const senderPhone = message.from;
         const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || body.entry[0].changes[0].value.metadata?.phone_number_id;
         const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-        const graphUrl = `https://graph.facebook.com/v20.0/${whatsappPhoneNumberId}/messages`;
+        
+        // Degradación estratégica a v17.0 para evadir la validación estricta de variables nombradas
+        const graphUrl = `https://graph.facebook.com/v17.0/${whatsappPhoneNumberId}/messages`;
 
         const { error: idempError } = await supabase.from('registro_webhooks_procesados').insert({ wamid: messageId });
         if (idempError) return res.sendStatus(200);
