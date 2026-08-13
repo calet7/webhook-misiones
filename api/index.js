@@ -17,7 +17,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 });
 
 /**
- * TEMPLATE_MAP y buildTemplatePayload (corregido: no enviar "name" en parameters)
+ * TEMPLATE_MAP CORREGIDO (FIX: header en cierre_encuentra_sentido y language ajustado)
  */
 const TEMPLATE_MAP = {
   bienvenida_encuentra_sentido: {
@@ -44,8 +44,9 @@ const TEMPLATE_MAP = {
   },
   cierre_encuentra_sentido: {
     mode: 'named',
-    language: 'es_CO',
+    language: 'es', // FIX: según tu nota esta plantilla está en "Spanish"
     components: [
+      { type: 'header', placeholders: ['imagen_header'] }, // FIX: faltaba el header
       { type: 'body', placeholders: ['nombre'] }
     ]
   }
@@ -136,6 +137,35 @@ function sanitizeTemplateForMeta(payload) {
     return copy;
   } catch (e) {
     console.error('sanitizeTemplateForMeta error:', e?.message || e);
+    return payload;
+  }
+}
+
+/**
+ * Inyectar parámetros de botón si faltan (fallback seguro)
+ * - Si TEMPLATE_MAP declara un componente 'button' pero el payload no lo tiene, inyecta un parámetro por defecto.
+ */
+function ensureButtonParams(meta, payload, senderPhone) {
+  try {
+    if (!meta || !Array.isArray(meta.components)) return payload;
+    const copy = JSON.parse(JSON.stringify(payload));
+    for (const compMeta of meta.components) {
+      if (compMeta.type === 'button') {
+        // buscar componente button en payload
+        let comp = copy.template.components.find(c => c.type === 'button');
+        if (!comp || !Array.isArray(comp.parameters) || comp.parameters.length === 0) {
+          const fallback = { type: 'text', text: `https://wa.me/${senderPhone}` };
+          if (!comp) {
+            copy.template.components.push({ type: 'button', parameters: [fallback] });
+          } else {
+            comp.parameters = [fallback];
+          }
+        }
+      }
+    }
+    return copy;
+  } catch (e) {
+    console.error('ensureButtonParams error:', e?.message || e);
     return payload;
   }
 }
@@ -512,7 +542,7 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
               {
                 nombre_pastor: pastorAsignado.nombre,
                 nombre: user.nombre_completo,
-                enlace_whatsapp: `wa.me/${senderPhone}`
+                enlace_whatsapp: `https://wa.me/${senderPhone}`
               },
               { wamid: messageId, step: 'alerta_nuevo_caso', usuario_id: user.id, pastor_id: pastorAsignado.id, telefono: senderPhone },
               { fallbackText: true }
@@ -567,7 +597,11 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
       await Promise.all(payloadsToSend.map(async (payload) => {
         try {
           // Sanitizar y loguear el payload final que se enviará a Meta
-          const safePayload = payload.template ? sanitizeTemplateForMeta(payload) : payload;
+          const metaName = payload.template?.name;
+          const metaDef = metaName ? TEMPLATE_MAP[metaName] : null;
+          let safePayload = payload.template ? sanitizeTemplateForMeta(payload) : payload;
+          safePayload = ensureButtonParams(metaDef, safePayload, payload.to);
+
           try {
             console.log('Payload final enviado a Meta:', JSON.stringify(safePayload, null, 2));
           } catch (e) {
@@ -619,5 +653,28 @@ app.post('/webhook', verifyMetaSignature, async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+/**
+ * EJEMPLO: llamada a cierre_encuentra_sentido con la URL de header que proporcionaste
+ * Reemplaza 'https://tjjsntnmqljhbakprvjh.supabase.co/...' por la URL real si cambia.
+ *
+ * Nota: este ejemplo no se ejecuta automáticamente; úsalo donde corresponda en tu flujo
+ * (por ejemplo, cuando detectes que el usuario finalizó la última temporada).
+ */
+async function ejemploEnviarCierre(payloadsToSend, senderPhone, user, messageId) {
+  const imagenCierreUrl = 'https://tjjsntnmqljhbakprvjh.supabase.co/storage/v1/object/public/imagenes%20varias/f56a339e-2b87-4fef-85d0-608529d9fcc5.png';
+
+  await safeBuildTemplatePush(
+    payloadsToSend,
+    senderPhone,
+    'cierre_encuentra_sentido',
+    {
+      imagen_header: imagenCierreUrl,
+      nombre: user.nombre_completo
+    },
+    { wamid: messageId, step: 'cierre' },
+    { fallbackText: true }
+  );
+}
 
 module.exports = app;
